@@ -4,6 +4,9 @@ using UnityEngine;
 
 public class TemperatureCompute : MonoBehaviour
 {
+    public GameObject target;
+
+
     [Header("波长")]
     public float wavelength1 = 3f;  //波段下限
     public float wavelength2 = 5f;  //波段上限
@@ -37,7 +40,7 @@ public class TemperatureCompute : MonoBehaviour
     private float skyRadiation;
 
     private readonly int MAX_ITERATION_PER_STEP = 100;
-    private readonly float EPSION = 1e-6f;
+    private readonly float EPSILON = 1e-6f;
 
 
     public struct pMaterial
@@ -140,8 +143,8 @@ public class TemperatureCompute : MonoBehaviour
 
         bool isInsulation = true;
         const int maxArrayCount = 103;
-        float[] lastTemps = new float[maxArrayCount];
-        float[] Temps = new float[maxArrayCount];
+        float[] lastTemperatures = new float[maxArrayCount];
+        float[] Temperatures = new float[maxArrayCount];
 
 
         float ratio = m.heatTransferCoefficient / (m.density * m.heatCapacity);
@@ -150,34 +153,84 @@ public class TemperatureCompute : MonoBehaviour
         float diff = boundHeat - initTemprature;
         for(int i  = 0; i < n; i++)
         {
-            Temps[i] = initTemprature + i * diff / n;
-            lastTemps[i] = 0f;
+            Temperatures[i] = initTemprature + i * diff / n;
+            lastTemperatures[i] = 0f;
         }
-
-        for(int k = 0; k < n; k++)
+        bool solvable = false;
+        for(int i = 0; i < MAX_ITERATION_PER_STEP; i++)
         {
-            if(k == 0) //表面
+            for(int j = 0; j < n; j++)
             {
-                Temps[k] = lastTemps[k] + dt * (QSun + QSky - Qcv - Qcd - QEmit) / (m.density * m.heatCapacity * dx);
+                lastTemperatures[j] = Temperatures[j];
             }
-            else if(k == n - 1) //最底层
+            float diffSum = 0f;
+            for (int k = 0; k < n; k++)
             {
-                float lastLayerTemp = lastTemps[k - 1];
-                float nextLayerTemp = boundHeat;
-                if (isInsulation)
-                    nextLayerTemp = lastTemps[k];
-                Temps[k] = lastTemps[k] + ratio * dt * (nextLayerTemp - lastTemps[k] * 2 + lastLayerTemp) / (dx * dx); //中心差分
+                if (k == 0) //表面
+                {
+                    Temperatures[k] = lastTemperatures[k] + dt * (QSun + QSky - Qcv - Qcd - QEmit) / (m.density * m.heatCapacity * dx);
+                    diffSum += Mathf.Abs(Temperatures[k] - lastTemperatures[k]);
+                }
+                else if (k == n - 1) //最底层
+                {
+                    float lastLayerTemp = lastTemperatures[k - 1];
+                    float nextLayerTemp = boundHeat;
+                    if (isInsulation)
+                        nextLayerTemp = lastTemperatures[k];
+                    Temperatures[k] = lastTemperatures[k] + ratio * dt * (nextLayerTemp - lastTemperatures[k] * 2 + lastLayerTemp) / (dx * dx); //中心差分
+                    diffSum += Mathf.Abs(Temperatures[k] - lastTemperatures[k]);
 
+                }
+                else //中间层，差分
+                {
+                    float lastLayerTemp = lastTemperatures[k - 1];
+                    float nextLayerTemp = lastTemperatures[k + 1];
+                    Temperatures[k] = lastTemperatures[k] + ratio * dt * (nextLayerTemp - lastTemperatures[k] * 2 + lastLayerTemp) / (dx * dx); //中心差分
+                    diffSum += Mathf.Abs(Temperatures[k] - lastTemperatures[k]);
+                }
             }
-            else //中间层，差分
+            if(diffSum < EPSILON * n)
             {
-                float lastLayerTemp = lastTemps[k - 1];
-                float nextLayerTemp = lastTemps[k + 1]; 
-                Temps[k] = lastTemps[k] + ratio * dt * (nextLayerTemp - lastTemps[k] * 2 + lastLayerTemp) / (dx * dx); //中心差分
+                solvable = true;
+                break;
             }
         }
+        if (solvable)
+            return Temperatures[0]; //只要表层温度
+        else return environmentTemp;
+    }
+
+    private void WriteDataToTexture()
+    {
         
-        return Temps[0]; //只要表层温度
+    }
+
+
+    private void CalculateAndRestoreData()
+    {
+        MeshFilter targetMeshFilter = target.GetComponent<MeshFilter>();
+        MeshRenderer targetMeshRenderer = target.GetComponent<MeshRenderer>();
+        Mesh targetMesh = targetMeshFilter.mesh;
+        Texture2D targetTexture2D = targetMeshRenderer.material.mainTexture as Texture2D;
+
+        //宽高
+        int pixelWidth = targetTexture2D.width;
+        int pixelHeight = targetTexture2D.height;
+
+
+        for(int i = 0; i < targetMesh.triangles.Length / 3; i++)
+        {
+            Vector3 v0 = targetMesh.vertices[i * 3 + 0];
+            Vector3 v1 = targetMesh.vertices[i * 3 + 1];
+            Vector3 v2 = targetMesh.vertices[i * 3 + 2];
+
+            Vector2 uv0 = targetMesh.uv[i * 3 + 0];
+            Vector2 uv1 = targetMesh.uv[i * 3 + 1];
+            Vector2 uv2 = targetMesh.uv[i * 3 + 2];
+
+            
+        }
+
     }
 
     // Start is called before the first frame update
